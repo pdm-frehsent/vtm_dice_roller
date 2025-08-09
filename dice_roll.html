@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>VtM5 Dice Roller by Frez</title>
+<style>
+  /* --------------------------------------------------------------
+     Общий стиль страницы
+  -------------------------------------------------------------- */
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background:#f4f4f4;
+    margin:0;
+    padding:20px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+  h1 { margin-bottom:5px; }
+
+  /* --------------------------------------------------------------
+     Контейнер – основное поле + боковая панель
+  -------------------------------------------------------------- */
+  #content{
+    display:flex;
+    align-items:flex-start;
+    width:100%;
+    max-width:1200px;
+  }
+  #main{
+    flex:1;
+  }
+  #history{
+    width:260px;
+    margin-left:20px;
+    max-height:80vh;
+    overflow-y:auto;
+    border-left:1px solid #ccc;
+    padding-left:10px;
+  }
+  #history h2{
+    margin-top:0;
+    font-size:1.2rem;
+  }
+  #history button{
+    margin-top:8px;
+    font-size:0.9rem;
+    padding:4px 8px;
+    cursor:pointer;
+  }
+  .history-die{
+    width:30px;
+    height:30px;
+    margin:2px;
+    vertical-align:middle;
+  }
+  .controls {
+    margin-bottom:20px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    align-items:center;
+    justify-content:center;
+  }
+  input[type=number]{
+    width:70px;
+    padding:5px;
+    font-size:1rem;
+  }
+  button{
+    font-size:1rem;
+    padding:5px 12px;
+    cursor:pointer;
+  }
+
+  /* --------------------------------------------------------------
+     Область вывода кубиков
+  -------------------------------------------------------------- */
+  #diceContainer{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    max-width:100%;
+  }
+
+  /* --------------------------------------------------------------
+     Кубик – без анимации, только образ
+  -------------------------------------------------------------- */
+  .die{
+    width:80px;
+    height:80px;
+    margin:10px;
+    position:relative;
+    overflow:hidden;
+    box-shadow:0 3px 6px rgba(0,0,0,0.3);
+    clip-path: polygon(
+      100% 50%,
+      90.45% 79.39%,
+      65.45% 97.56%,
+      34.55% 97.56%,
+      9.55% 79.39%,
+      0% 50%,
+      9.55% 20.61%,
+      34.55% 2.44%,
+      65.45% 2.44%,
+      90.45% 20.61%
+    );
+  }
+  .die img{
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    user-select:none;
+    pointer-events:none;
+  }
+
+  /* --------------------------------------------------------------
+     Стиль блока‑резюме (ИСПРАВЛЕНО - центрирование)
+  -------------------------------------------------------------- */
+  #summary{
+    margin: 20px auto 0; /* Центрирование по горизонтали */
+    max-width:600px;
+    text-align: center; /* Центрирование текста */
+  }
+  #summary h2{ 
+    margin-top:0; 
+  }
+  #summary ul{
+    list-style:none;
+    padding-left:0;
+    text-align: left; /* Выравнивание списка по левому краю */
+  }
+  #summary li{
+    margin-bottom:4px;
+  }
+</style>
+</head>
+<body>
+
+<h1>VtM v5 Dice Roller by Frez</h1>
+
+<div id="content">
+  <!-- ---------------------- Основная часть ---------------------- -->
+  <div id="main">
+    <div class="controls">
+      <label for="regularCount">Обычных кубиков:</label>
+      <input type="number" id="regularCount" min="0" max="30" value="3">
+      <label for="hungerCount">Кровавых кубиков:</label>
+      <input type="number" id="hungerCount" min="0" max="30" value="0">
+      <button id="rollBtn">Бросить</button>
+    </div>
+
+    <div id="diceContainer"></div>
+    <div id="summary"></div>
+  </div>
+
+  <!-- ---------------------- История ---------------------- -->
+  <div id="history">
+    <h2>История бросков</h2>
+    <button id="clearHistoryBtn">Очистить историю</button>
+    <ul id="historyList"></ul>
+  </div>
+</div>
+
+<script>
+/* --------------------------------------------------------------
+   Путь к изображениям (файлы должны находиться рядом с html‑файлом)
+-------------------------------------------------------------- */
+const diceImages = {
+  regular: {
+    critical: 'Dice_Regular_Critical.png',   // 10
+    success:  'Dice_Regular_Success.png',    // 6‑9
+    failure:  'Dice_Regular_Failure.png'     // 1‑5
+  },
+  hunger: {
+    bestialFailure: 'Dice_Hunger_BestialFailure.png', // 1
+    failure:        'Dice_Hunger_Failure.png',        // 2‑5
+    success:        'Dice_Hunger_Success.png',        // 6‑9
+    messyCritical:  'Dice_Hunger_MessyCritical.png' // 10
+  }
+};
+
+/* --------------------------------------------------------------
+   Утилита – бросок одного кубика
+-------------------------------------------------------------- */
+function rollDie(type) {
+  const roll = Math.floor(Math.random()*10)+1; // 1‑10
+  let imgSrc;
+  if (type === 'regular') {
+    if (roll === 10)        imgSrc = diceImages.regular.critical;
+    else if (roll >= 6)     imgSrc = diceImages.regular.success;
+    else                    imgSrc = diceImages.regular.failure;
+  } else { // hunger
+    if (roll === 1)                     imgSrc = diceImages.hunger.bestialFailure;
+    else if (roll <= 5)                 imgSrc = diceImages.hunger.failure;
+    else if (roll <= 9)                 imgSrc = diceImages.hunger.success;
+    else /* roll === 10 */               imgSrc = diceImages.hunger.messyCritical;
+  }
+  return { roll, imgSrc };
+}
+
+/* --------------------------------------------------------------
+   Создаём визуальный элемент кубика (анимации нет)
+-------------------------------------------------------------- */
+function createDieElement(type, info) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'die';
+  const img = document.createElement('img');
+  img.src = info.imgSrc;
+  img.alt = `${type} die – ${info.roll}`;
+  img.title = `${type.charAt(0).toUpperCase()+type.slice(1)}: ${info.roll}`;
+  wrapper.appendChild(img);
+  return wrapper;
+}
+
+/* --------------------------------------------------------------
+   Элементы интерфейса
+-------------------------------------------------------------- */
+const rollBtn      = document.getElementById('rollBtn');
+const regularInput = document.getElementById('regularCount');
+const hungerInput  = document.getElementById('hungerCount');
+const container    = document.getElementById('diceContainer');
+const summaryDiv   = document.getElementById('summary');
+
+const historyList       = document.getElementById('historyList');
+const clearHistoryBtn   = document.getElementById('clearHistoryBtn');
+let historyData = JSON.parse(localStorage.getItem('diceHistory') || '[]');
+
+/* --------------------------------------------------------------
+   Рендер всей истории (при загрузке страницы)
+-------------------------------------------------------------- */
+function renderHistory() {
+  historyList.innerHTML = '';
+  // Выводим в обратном порядке – новые записи вверху
+  for (let i = historyData.length - 1; i >= 0; i--) {
+    renderHistoryEntry(historyData[i]);
+  }
+}
+
+/* --------------------------------------------------------------
+   Отрисовка одной записи истории (вставка сверху)
+-------------------------------------------------------------- */
+function renderHistoryEntry(entry) {
+  const li = document.createElement('li');
+  li.style.marginBottom = '8px';
+
+  const header = document.createElement('div');
+  header.style.fontWeight = 'bold';
+  header.textContent = `${entry.time} — Успехов: ${entry.totalSuccesses}`;
+  li.appendChild(header);
+
+  if (entry.dice && entry.dice.length) {
+    const diceWrap = document.createElement('div');
+    diceWrap.style.marginTop = '4px';
+    entry.dice.forEach(d => {
+      const img = document.createElement('img');
+      img.src = d.imgSrc;
+      img.alt = `${d.type} ${d.roll}`;
+      img.title = `${d.type.charAt(0).toUpperCase()+d.type.slice(1)}: ${d.roll}`;
+      img.className = 'history-die';
+      if (d.type === 'hunger') img.classList.add('history-die-hunger');
+      diceWrap.appendChild(img);
+    });
+    li.appendChild(diceWrap);
+  }
+
+  // Вставляем запись наверх списка
+  if (historyList.firstChild) {
+    historyList.insertBefore(li, historyList.firstChild);
+  } else {
+    historyList.appendChild(li);
+  }
+}
+
+/* --------------------------------------------------------------
+   Очистка истории (кнопка)
+-------------------------------------------------------------- */
+clearHistoryBtn.addEventListener('click', () => {
+  if (confirm('Вы уверены, что хотите очистить историю бросков?')) {
+    localStorage.removeItem('diceHistory');
+    historyData = [];
+    historyList.innerHTML = '';
+  }
+});
+
+/* --------------------------------------------------------------
+   Основная логика броска
+-------------------------------------------------------------- */
+function rollAll() {
+  const regularCount = Math.max(0, parseInt(regularInput.value) || 0);
+  const hungerCount  = Math.max(0, parseInt(hungerInput.value)  || 0);
+
+  // Очистка предыдущих результатов
+  container.innerHTML = '';
+  summaryDiv.innerHTML = '';
+
+  // Статистика для подсчёта успехов
+  const stats = {
+    success6to9: 0,   // 6‑9
+    tens: 0,          // 10
+    failures: 0,      // 1‑5 (regular) и 2‑5 (hunger)
+    bestialFailures: 0 // 1 на кровавом кубе
+  };
+
+  // Для истории — детальные данные о каждом кубике
+  const regularInfos = [];
+  const hungerInfos  = [];
+
+  /* -------------------- Обычные кубики -------------------- */
+  for (let i = 0; i < regularCount; i++) {
+    const info = rollDie('regular');
+    if (info.roll === 10) stats.tens++;
+    else if (info.roll >= 6) stats.success6to9++;
+    else stats.failures++;
+
+    regularInfos.push({ roll: info.roll, imgSrc: info.imgSrc, type: 'regular' });
+    container.appendChild(createDieElement('regular', info));
+  }
+
+  /* -------------------- Кровавые кубики -------------------- */
+  for (let i = 0; i < hungerCount; i++) {
+    const info = rollDie('hunger');
+    if (info.roll === 10) stats.tens++;
+    else if (info.roll >= 6) stats.success6to9++;
+    else if (info.roll === 1) stats.bestialFailures++;
+    else stats.failures++;
+
+    hungerInfos.push({ roll: info.roll, imgSrc: info.imgSrc, type: 'hunger' });
+    container.appendChild(createDieElement('hunger', info));
+  }
+
+  /* -------------------- Подсчёт успехов по формуле -------------------- */
+  const pairsOfTens = Math.floor(stats.tens / 2);   // каждая пара десяток = 4 успеха
+  const leftoverTen = stats.tens % 2;               // непарная десятка = 1 успех
+  const successFromTens = pairsOfTens * 4 + leftoverTen;
+  const totalSuccesses = stats.success6to9 + successFromTens;
+
+  /* -------------------- Вывод текущего результата -------------------- */
+  summaryDiv.innerHTML = `<h2>Итого успехов: ${totalSuccesses}</h2>`;
+
+  /* -------------------- Добавляем запись в историю -------------------- */
+  const entry = {
+    time: new Date().toLocaleString(),
+    totalSuccesses,
+    dice: [...regularInfos, ...hungerInfos]   // порядок: сначала обычные, потом кровавые
+  };
+  historyData.push(entry);
+  // Храним максимум 100 записей, чтобы не перегрузить localStorage
+  if (historyData.length > 100) historyData.shift();
+  localStorage.setItem('diceHistory', JSON.stringify(historyData));
+  renderHistoryEntry(entry);
+}
+
+/* --------------------------------------------------------------
+   Обработчики
+-------------------------------------------------------------- */
+rollBtn.addEventListener('click', rollAll);
+
+/* --------------------------------------------------------------
+   При загрузке страницы восстанавливаем историю
+-------------------------------------------------------------- */
+document.addEventListener('DOMContentLoaded', renderHistory);
+</script>
+
+</body>
+</html>
